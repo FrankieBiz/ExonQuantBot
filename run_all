@@ -1,0 +1,36 @@
+import subprocess
+import time
+import sys
+import os
+
+PYTHON = sys.executable  # uses same Python you run this with
+
+def start_process(cmd):
+    return subprocess.Popen(cmd, cwd=os.getcwd())
+
+if __name__ == "__main__":
+    # 1) start scraper scheduler
+    scheduler_proc = start_process([PYTHON, "scheduler.py"])
+    print("Started scheduler.py")
+
+    # small delay so DB starts filling
+    time.sleep(2)
+
+    # 2) start FastAPI
+    api_proc = start_process([PYTHON, "api.py"])
+    print("Started api.py (News API on http://127.0.0.1:8001)")
+
+    # 3) start trading bot
+    bot_proc = start_process([PYTHON, "automated_trading_bot.py"])
+    print("Started automated_trading_bot.py")
+
+    print("\nAll processes started. Press Ctrl+C here to stop them.\n")
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nStopping all processes...")
+        for p in [bot_proc, api_proc, scheduler_proc]:
+            p.terminate()
+        print("Done.")
