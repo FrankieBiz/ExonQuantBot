@@ -8,6 +8,7 @@ import requests
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from ib_insync import *
 
+
 # ============================================
 # CONFIGURATION
 # ============================================
@@ -21,11 +22,11 @@ class Config:
     CURRENCY = 'USD'
 
     # Risk Management
-    MAX_POSITION_SIZE = 100  # Maximum shares to hold
-    POSITION_SIZE_PER_SIGNAL = 10  # Shares per trade
+    MAX_POSITION_SIZE = 100          # Maximum shares to hold
+    POSITION_SIZE_PER_SIGNAL = 10    # Shares per trade
     MAX_DAILY_TRADES = 10
-    STOP_LOSS_PCT = 0.02  # 2% stop loss
-    TAKE_PROFIT_PCT = 0.03  # 3% take profit
+    STOP_LOSS_PCT = 0.02             # 2% stop loss
+    TAKE_PROFIT_PCT = 0.03           # 3% take profit
 
     # Sentiment Thresholds
     STRONG_BUY_THRESHOLD = 0.3
@@ -34,7 +35,7 @@ class Config:
     STRONG_SELL_THRESHOLD = -0.3
 
     # Timing
-    NEWS_CHECK_INTERVAL = 300  # Check news every 5 minutes
+    NEWS_CHECK_INTERVAL = 300        # Check news every 5 minutes
     MARKET_OPEN_HOUR = 9
     MARKET_OPEN_MINUTE = 30
     MARKET_CLOSE_HOUR = 16
@@ -42,12 +43,13 @@ class Config:
 
     # IB Connection
     IB_HOST = '127.0.0.1'
-    IB_PORT = 7497  # 7497 for TWS paper, 4002 for IB Gateway paper
+    IB_PORT = 7497                   # 7497 for TWS paper, 4002 for IB Gateway paper
     IB_CLIENT_ID = 1
 
     # Logging
     LOG_FILE = 'trading_bot.log'
     LOG_LEVEL = logging.INFO
+
 
 # ============================================
 # LOGGING SETUP
@@ -62,8 +64,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger('QuantBot')
 
+
 # ============================================
-# NEWS FETCHER
+# NEWS FETCHER (uses /news/latest)
 # ============================================
 class NewsFetcher:
     def __init__(self, api_base_url="http://127.0.0.1:8001"):
@@ -72,16 +75,15 @@ class NewsFetcher:
 
     def fetch_latest_news(self, query, lookback_minutes=60):
         """
-        Fetch news for a given query from your independent API.
-        Returns a list of dicts that look like NewsAPI articles.
+        Fetch latest news from your independent API.
+        Ignores 'query' for now and just pulls the newest N articles.
         """
         try:
-            # Call your /news/search endpoint
             params = {
-                "query": query,
                 "limit": 20
+                # you could add: "sentiment": "positive"
             }
-            resp = requests.get(f"{self.api_base_url}/news/search", params=params, timeout=10)
+            resp = requests.get(f"{self.api_base_url}/news/latest", params=params, timeout=10)
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
@@ -96,13 +98,13 @@ class NewsFetcher:
                 "url": a.get("url", ""),
                 "publishedAt": a.get("published", ""),
                 "source": {"name": a.get("source", "")},
-                # extra fields if you want them later
                 "sentiment_score": a.get("sentiment_score"),
                 "sentiment_label": a.get("sentiment_label"),
             })
 
         logger.info(f"Fetched {len(api_articles)} articles from local news API")
         return api_articles
+
 
 # ============================================
 # SENTIMENT ANALYZER
@@ -142,7 +144,7 @@ class SentimentAnalyzer:
         keyword_matches = sum(1 for keyword in self.important_keywords if keyword in text_lower)
         score += keyword_matches * 0.5
 
-        # Length bonus (longer articles are typically more substantial)
+        # Length bonus
         if len(text) > 100:
             score += 0.3
         if len(text) > 200:
@@ -167,7 +169,7 @@ class SentimentAnalyzer:
                 pub_time = datetime.fromisoformat(article.get('publishedAt', '').replace('Z', '+00:00'))
                 hours_old = (now - pub_time.replace(tzinfo=None)).total_seconds() / 3600
                 decay_factor = max(0.1, 1 - (hours_old / time_decay_hours))
-            except:
+            except Exception:
                 decay_factor = 0.5
 
             weight = analysis['importance'] * decay_factor
@@ -175,6 +177,7 @@ class SentimentAnalyzer:
             total_weight += weight
 
         return total_weighted_score / total_weight if total_weight > 0 else 0.0
+
 
 # ============================================
 # TRADING STRATEGY
@@ -260,7 +263,7 @@ class TradingStrategy:
         if signal == 'BUY':
             self.position += quantity
             self.entry_price = price
-        elif signal == 'SELL' or signal == 'CLOSE':
+        elif signal in ('SELL', 'CLOSE'):
             self.position -= quantity
             if self.position == 0:
                 self.entry_price = 0.0
@@ -274,6 +277,7 @@ class TradingStrategy:
         })
 
         logger.info(f"Trade executed: {signal} {quantity} @ ${price:.2f} | Position: {self.position}")
+
 
 # ============================================
 # INTERACTIVE BROKERS TRADER
@@ -354,6 +358,7 @@ class IBTrader:
             logger.error(f"Error getting position: {e}")
             return 0
 
+
 # ============================================
 # MAIN TRADING BOT
 # ============================================
@@ -367,26 +372,8 @@ class QuantTradingBot:
         self.running = False
 
     def is_market_open(self):
-        """Check if market is currently open"""
-        now = datetime.now()
-
-        # Check if weekend
-        if now.weekday() >= 5:  # Saturday = 5, Sunday = 6
-            return False
-
-        # Check market hours
-        market_open = now.replace(
-            hour=self.config.MARKET_OPEN_HOUR,
-            minute=self.config.MARKET_OPEN_MINUTE,
-            second=0
-        )
-        market_close = now.replace(
-            hour=self.config.MARKET_CLOSE_HOUR,
-            minute=self.config.MARKET_CLOSE_MINUTE,
-            second=0
-        )
-
-        return market_open <= now <= market_close
+        """TEMP: Always treat market as open for testing."""
+        return True
 
     def run_trading_cycle(self):
         """Execute one trading cycle"""
@@ -404,7 +391,6 @@ class QuantTradingBot:
 
             # 2. Analyze sentiment
             logger.info(f"Analyzing sentiment for {len(articles)} articles...")
-            #   If API already sent per-article sentiment_score, average them
             scores = [a.get("sentiment_score") for a in articles if a.get("sentiment_score") is not None]
             if scores:
                 sentiment_score = sum(scores) / len(scores)
@@ -412,7 +398,6 @@ class QuantTradingBot:
             else:
                 sentiment_score = self.sentiment_analyzer.aggregate_sentiment(articles)
                 logger.info(f"Aggregate sentiment score (local VADER): {sentiment_score:.3f}")
-
 
             # 3. Get current price
             current_price = self.trader.get_current_price()
@@ -462,14 +447,12 @@ class QuantTradingBot:
 
         try:
             while self.running:
-                # Check if market is open
                 if self.is_market_open():
                     logger.info("Market is OPEN - Running trading cycle")
                     self.run_trading_cycle()
                 else:
                     logger.info("Market is CLOSED - Waiting...")
 
-                # Sleep until next check
                 logger.info(f"Sleeping for {self.config.NEWS_CHECK_INTERVAL}s...")
                 time.sleep(self.config.NEWS_CHECK_INTERVAL)
 
@@ -494,6 +477,7 @@ class QuantTradingBot:
         # Disconnect from IB
         self.trader.disconnect()
         logger.info("Trading bot stopped")
+
 
 # ============================================
 # ENTRY POINT
